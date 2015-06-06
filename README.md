@@ -2,7 +2,7 @@ Memex Elasticsearch Common Crawl Architecture (CCA) Indexer
 ==========================================================
 This is an indexing program to take Common Crawl Architecture
 formatted CBOR data and to dump it into Elasticsearch. Run:
-
+ 
 `memex_cca_esindex.py -h`
 
 For guidance.
