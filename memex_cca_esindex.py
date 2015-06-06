@@ -107,17 +107,20 @@ def esIndex(ccaDir, team, crawler, url, index, docType):
         newDoc = {}
         with open(f, 'r') as fd:
             try:
-                ccaDoc = json.loads(cbor.load(fd), encoding='utf8')
+                c = fd.read()
+                # fix for no request body out of Nutch CCA
+                c.replace("\"body\" : null", "\"body\" : \"null\"")
+                ccaDoc = json.loads(cbor.loads(c), encoding='utf8')
                 newDoc["url"] = ccaDoc["url"]
                 newDoc["timestamp"] = ccaDoc["imported"]
                 newDoc["team"] = team
                 newDoc["crawler"] = crawler
                 newDoc["raw_content"] = ccaDoc["response"]["body"]
                 newDoc["content_type"] = getContentType(ccaDoc)
-                parsed = parser.from_buffer(newDoc["raw_content"])
+                parsed = parser.from_buffer(newDoc["raw_content"].encode("utf-8"))
                 newDoc["crawl_data"] = {}
                 newDoc["crawl_data"]["content"] = parsed["content"]
-                verboseLog(json.dumps(newDoc))
+                verboseLog("Indexing ["+f+"] to Elasticsearch.")
                 indexDoc(url, newDoc, index, docType)
                 procList.append(f)
             except ValueError, err:
