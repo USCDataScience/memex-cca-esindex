@@ -101,6 +101,7 @@ def esIndex(ccaDir, team, crawler, url, index, docType):
     procList=[]
     failedList=[]
     failedReasons=[]
+    CDRVersion = 2.0
 
     for f in ccaJsonList:
         ccaDoc = None
@@ -120,6 +121,13 @@ def esIndex(ccaDir, team, crawler, url, index, docType):
                 parsed = parser.from_buffer(newDoc["raw_content"].encode("utf-8"))
                 newDoc["crawl_data"] = {}
                 newDoc["crawl_data"]["content"] = parsed["content"]
+
+                # CDR version 2.0 additions
+                newDoc["_id"] = ccaDoc["key"]
+                newDoc["extracted_metadata"] = parsed["metadata"]
+                newDoc["extracted_text"] = parsed["content"]
+                newDoc["version"] = CDRVersion
+
                 verboseLog("Indexing ["+f+"] to Elasticsearch.")
                 indexDoc(url, newDoc, index, docType)
                 procList.append(f)
