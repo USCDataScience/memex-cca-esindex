@@ -89,9 +89,9 @@ def getContentType(ccaDoc):
     return "application/octet-stream"
 
 def indexDoc(url, doc, index, docType):
-    print "Inexing "+doc["url"]+" to ES at: ["+url+"]"
+    print "Indexing "+doc["url"]+" to ES at: ["+url+"]"
     es = Elasticsearch([url])
-    res = es.index(index=index, doc_type=docType,  body=doc)
+    res = es.index(index=index, doc_type=docType, id=doc["_id"], body=doc)
     print(res['created'])
 
 def esIndex(ccaDir, team, crawler, url, index, docType):
