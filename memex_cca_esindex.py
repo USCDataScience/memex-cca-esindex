@@ -42,6 +42,8 @@
 #  ./memex_cca_esindex.py -t "JPL" -c "Nutch 1.11-SNAPSHOT" -d crawl_20150410_cca/ -u https://user:pass@localhost:9200/ -i memex-domains -o stuff
 # 
 # If you want verbose logging, turn it on with -v
+import codecs
+import traceback
 
 from tika import parser
 from elasticsearch import Elasticsearch
@@ -54,7 +56,7 @@ import getopt
 _verbose = False
 _helpMessage = '''
 
-Usage: memex_cca_esindex [-t <crawl team>] [-c <crawler id>] [-d <cca dir> [-u <url>] [-i <index>] [-o docType]
+Usage: memex_cca_esindex [-t <crawl team>] [-c <crawler id>] [-d <cca dir> [-u <url>] [-i <index>] [-o docType] [-p <path>]
 
 Operation:
 -t --team
@@ -65,13 +67,15 @@ Operation:
     The directory where CCA CBOR JSON files are located.
 -u --url
     The URL to Elasticsearch. If you need auth, you can use RFC-1738 to specify the url, e.g., https://user:secret@localhost:443
+-p --path
+    The path to output file where the data shall be stored instead of indexing to elasticsearch
 -i --index
     The Elasticsearch index, e.g., memex-domains, to index to.
 -o --docType
     The document type e.g., weapons, to index to.
 '''
 
-def list_files(dir):                                                                                                  
+def list_files(dir):
     r = []                                                                                                            
     subdirs = [x[0] for x in os.walk(dir)]                                                                            
     for subdir in subdirs:                                                                                            
@@ -94,7 +98,9 @@ def indexDoc(url, doc, index, docType):
     res = es.index(index=index, doc_type=docType, id=doc["_id"], body=doc)
     print(res['created'])
 
-def esIndex(ccaDir, team, crawler, url, index, docType):
+def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None):
+    if not url and not outPath:
+        raise Exception("Either Elastic Url or output path must be specified.")
     ccaJsonList = list_files(ccaDir)
     print "Processing ["+str(len(ccaJsonList))+"] files."
 
@@ -102,12 +108,12 @@ def esIndex(ccaDir, team, crawler, url, index, docType):
     failedList=[]
     failedReasons=[]
     CDRVersion = 2.0
+    outFile = codecs.open(outPath, 'w', 'utf-8') if outPath else None
 
     for f in ccaJsonList:
-        ccaDoc = None
-        newDoc = {}
         with open(f, 'r') as fd:
             try:
+                newDoc = {}
                 c = fd.read()
                 # fix for no request body out of Nutch CCA
                 c.replace("\"body\" : null", "\"body\" : \"null\"")
@@ -127,14 +133,20 @@ def esIndex(ccaDir, team, crawler, url, index, docType):
                 newDoc["extracted_metadata"] = parsed["metadata"]
                 newDoc["extracted_text"] = parsed["content"]
                 newDoc["version"] = CDRVersion
-
                 verboseLog("Indexing ["+f+"] to Elasticsearch.")
-                indexDoc(url, newDoc, index, docType)
+                if url:
+                    indexDoc(url, newDoc, index, docType)
+                if outFile:
+                    outFile.write(json.dumps(newDoc))
+                    outFile.write("\n")
                 procList.append(f)
             except ValueError, err:
                 failedList.append(f)
                 failedReasons.append(str(err))
-
+                traceback.print_exc()
+    if outFile:
+        print("Output Stored at %s" % outPath)
+        outFile.close()
     print "Processed "+str(len(procList))+" CBOR files successfully."
     print "Failed files: "+str(len(failedList))
 
@@ -157,7 +169,8 @@ def main(argv=None):
 
    try:
        try:
-          opts, args = getopt.getopt(argv[1:],'hvt:c:d:u:i:o:',['help', 'verbose', 'team=', 'crawlerId=', 'dataDir=', 'url=', 'index=', 'docType='])
+          opts, args = getopt.getopt(argv[1:], 'hvt:c:d:u:i:o:p:',
+                                     ['help', 'verbose', 'team=', 'crawlerId=', 'dataDir=', 'url=', 'index=', 'docType=', 'path='])
        except getopt.error, msg:
          raise _Usage(msg)    
      
@@ -169,6 +182,7 @@ def main(argv=None):
        url=None
        index=None
        docType=None
+       outPath=None
        
        for option, value in opts:           
           if option in ('-h', '--help'):
@@ -188,11 +202,13 @@ def main(argv=None):
               index = value
           elif option in ('-o', '--docType'):
               docType = value
+          elif option in ('-p', '--path'):
+              outPath = value
 
-       if team == None or crawlerId == None or dataDir == None or url == None or index == None or docType == None:
+       if team == None or crawlerId == None or dataDir == None or index == None or docType == None\
+               or (outPath == None and url == None):
            raise _Usage(_helpMessage)
-
-       esIndex(dataDir, team, crawlerId, url, index, docType)
+       esIndex(dataDir, team, crawlerId, index, docType, url, outPath)
 
    except _Usage, err:
        print >>sys.stderr, sys.argv[0].split('/')[-1] + ': ' + str(err.msg)
