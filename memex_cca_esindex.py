@@ -117,7 +117,7 @@ def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None):
                 c = fd.read()
                 # fix for no request body out of Nutch CCA
                 c.replace("\"body\" : null", "\"body\" : \"null\"")
-                ccaDoc = json.loads(cbor.loads(c), encoding='utf8')
+                ccaDoc = json.loads(cbor.loads(c).value, encoding='utf8')
                 newDoc["url"] = ccaDoc["url"]
                 newDoc["timestamp"] = ccaDoc["imported"]
                 newDoc["team"] = team
