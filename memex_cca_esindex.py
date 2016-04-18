@@ -135,15 +135,16 @@ def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None, store
                 newDoc["content_type"] = getContentType(ccaDoc)
                 parsed = parser.from_buffer(newDoc["raw_content"].encode("utf-8"))
                 newDoc["crawl_data"] = {}
-                newDoc["crawl_data"]["content"] = parsed["content"]
+                if "content" in parsed:
+                    newDoc["crawl_data"]["content"] = parsed["content"]
+                    newDoc["extracted_text"] = parsed["content"]
 
                 # CDR version 2.0 additions
                 newDoc["_id"] = ccaDoc["key"]
                 newDoc["obj_original_url"] = ccaDoc["url"]
                 # newDoc["obj_parent"] = ??? Missing # TODO: get this field some how!
                 newDoc["obj_stored_url"] = url_to_nutch_dump_path(ccaDoc["url"], prefix=storeprefix)
-                newDoc["extracted_metadata"] = parsed["metadata"]
-                newDoc["extracted_text"] = parsed["content"]
+                newDoc["extracted_metadata"] = parsed["metadata"] if 'metadata' in parsed else {}
                 newDoc["version"] = CDRVersion
                 verboseLog("Indexing ["+f+"] to Elasticsearch.")
                 if url:
