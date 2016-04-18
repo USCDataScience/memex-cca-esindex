@@ -104,7 +104,7 @@ def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None):
     ccaJsonList = list_files(ccaDir)
     print "Processing ["+str(len(ccaJsonList))+"] files."
 
-    procList=[]
+    procCount = 0
     failedList=[]
     failedReasons=[]
     CDRVersion = 2.0
@@ -119,6 +119,7 @@ def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None):
                 c.replace("\"body\" : null", "\"body\" : \"null\"")
                 ccaDoc = json.loads(cbor.loads(c).value, encoding='utf8')
                 newDoc["url"] = ccaDoc["url"]
+
                 newDoc["timestamp"] = ccaDoc["imported"]
                 newDoc["team"] = team
                 newDoc["crawler"] = crawler
@@ -130,6 +131,10 @@ def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None):
 
                 # CDR version 2.0 additions
                 newDoc["_id"] = ccaDoc["key"]
+                newDoc["obj_original_url"] = ccaDoc["url"]
+                # TODO: get these fields some how!
+                # newDoc["obj_parent"] = ??? Missing
+                # newDoc["obj_stored_url"] = ??? Missing
                 newDoc["extracted_metadata"] = parsed["metadata"]
                 newDoc["extracted_text"] = parsed["content"]
                 newDoc["version"] = CDRVersion
@@ -139,16 +144,16 @@ def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None):
                 if outFile:
                     outFile.write(json.dumps(newDoc))
                     outFile.write("\n")
-                procList.append(f)
-            except ValueError, err:
+                procCount += 1
+            except Exception as err:
                 failedList.append(f)
                 failedReasons.append(str(err))
                 traceback.print_exc()
     if outFile:
         print("Output Stored at %s" % outPath)
         outFile.close()
-    print "Processed "+str(len(procList))+" CBOR files successfully."
-    print "Failed files: "+str(len(failedList))
+    print "Processed " + str(procCount) + " CBOR files successfully."
+    print "Failed files: " + str(len(failedList))
 
     if _verbose:
         for i in range(len(failedList)):
