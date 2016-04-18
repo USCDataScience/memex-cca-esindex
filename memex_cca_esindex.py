@@ -39,7 +39,9 @@
 # }
 # To call this program, do something like the following
 # 
-#  ./memex_cca_esindex.py -t "JPL" -c "Nutch 1.11-SNAPSHOT" -d crawl_20150410_cca/ -u https://user:pass@localhost:9200/ -i memex-domains -o stuff
+#  ./memex_cca_esindex.py -t "JPL" -c "Nutch 1.11-SNAPSHOT" -d crawl_20150410_cca/ \
+#   -u https://user:pass@localhost:9200/ -i memex-domains -o stuff \
+#   -p dump.json -s http://imagecat.dyndns.org/weapons/alldata/
 # 
 # If you want verbose logging, turn it on with -v
 import codecs
@@ -52,11 +54,14 @@ import os
 import cbor
 import sys
 import getopt
+import hashlib
+
 
 _verbose = False
 _helpMessage = '''
 
-Usage: memex_cca_esindex [-t <crawl team>] [-c <crawler id>] [-d <cca dir> [-u <url>] [-i <index>] [-o docType] [-p <path>]
+Usage: memex_cca_esindex [-t <crawl team>] [-c <crawler id>] [-d <cca dir> [-u <url>]
+        [-i <index>] [-o docType] [-p <path>] [-s <raw store prefix path>]
 
 Operation:
 -t --team
@@ -69,21 +74,24 @@ Operation:
     The URL to Elasticsearch. If you need auth, you can use RFC-1738 to specify the url, e.g., https://user:secret@localhost:443
 -p --path
     The path to output file where the data shall be stored instead of indexing to elasticsearch
+-s --storeprefix
+    The path to raw file store where the raw files are stored. Note that this is different than CBOR file dump.
 -i --index
     The Elasticsearch index, e.g., memex-domains, to index to.
 -o --docType
     The document type e.g., weapons, to index to.
+
 '''
 
 def list_files(dir):
-    r = []                                                                                                            
-    subdirs = [x[0] for x in os.walk(dir)]                                                                            
-    for subdir in subdirs:                                                                                            
-        files = os.walk(subdir).next()[2]                                                                             
-        if (len(files) > 0):                                                                                          
-            for file in files:                                                                                        
-                r.append(subdir + "/" + file)                                                                         
-    return r    
+    r = []
+    subdirs = [x[0] for x in os.walk(dir)]
+    for subdir in subdirs:
+        files = os.walk(subdir).next()[2]
+        if (len(files) > 0):
+            for file in files:
+                r.append(subdir + "/" + file)
+    return r
 
 
 def getContentType(ccaDoc):
@@ -98,7 +106,7 @@ def indexDoc(url, doc, index, docType):
     res = es.index(index=index, doc_type=docType, id=doc["_id"], body=doc)
     print(res['created'])
 
-def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None):
+def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None, storeprefix=None):
     if not url and not outPath:
         raise Exception("Either Elastic Url or output path must be specified.")
     ccaJsonList = list_files(ccaDir)
@@ -132,9 +140,8 @@ def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None):
                 # CDR version 2.0 additions
                 newDoc["_id"] = ccaDoc["key"]
                 newDoc["obj_original_url"] = ccaDoc["url"]
-                # TODO: get these fields some how!
-                # newDoc["obj_parent"] = ??? Missing
-                # newDoc["obj_stored_url"] = ??? Missing
+                # newDoc["obj_parent"] = ??? Missing # TODO: get this field some how!
+                newDoc["obj_stored_url"] = url_to_nutch_dump_path(ccaDoc["url"], prefix=storeprefix)
                 newDoc["extracted_metadata"] = parsed["metadata"]
                 newDoc["extracted_text"] = parsed["content"]
                 newDoc["version"] = CDRVersion
@@ -168,56 +175,76 @@ class _Usage(Exception):
     def __init__(self, msg):
         self.msg = msg
 
+def url_to_nutch_dump_path(url, prefix=None):
+    """
+    Converts URL to nutch dump path (the regular dump with reverse domain, not the commons crawl dump path)
+    :param url: valid url string
+    :param prefix: prefix string (default = "")
+    :return: nutch dump path prefixed to given path
+    """
+    domain = url.split("/")[2]
+    return "{0}/{1}/{2}".format("" if prefix is None else prefix.strip("/"),
+                                "/".join(reversed(domain.split("."))),
+                                hashlib.sha256(url).hexdigest().upper())
+
+
 def main(argv=None):
-   if argv is None:
-     argv = sys.argv
+    if argv is None:
+        argv = sys.argv
+    try:
+        try:
+            opts, args = getopt.getopt(argv[1:], 'hvt:c:d:u:i:o:p:s:',
+                                       ['help', 'verbose', 'team=', 'crawlerId=', 'dataDir=', 'url=', 'index=',
+                                        'docType=', 'path=', 'storeprefix='])
+        except getopt.error, msg:
+            raise _Usage(msg)
 
-   try:
-       try:
-          opts, args = getopt.getopt(argv[1:], 'hvt:c:d:u:i:o:p:',
-                                     ['help', 'verbose', 'team=', 'crawlerId=', 'dataDir=', 'url=', 'index=', 'docType=', 'path='])
-       except getopt.error, msg:
-         raise _Usage(msg)    
-     
-       if len(opts) == 0:
-           raise _Usage(_helpMessage)
-       team=None
-       crawlerId=None
-       dataDir=None
-       url=None
-       index=None
-       docType=None
-       outPath=None
-       
-       for option, value in opts:           
-          if option in ('-h', '--help'):
-             raise _Usage(_helpMessage)
-          elif option in ('-v', '--verbose'):
-             global _verbose
-             _verbose = True
-          elif option in ('-t', '--team'):
-              team = value
-          elif option in ('-c', '--crawlerId'):
-             crawlerId = value
-          elif option in ('-d', '--dataDir'):
-             dataDir = value
-          elif option in ('-u', '--url'):
-              url = value
-          elif option in ('-i', '--index'):
-              index = value
-          elif option in ('-o', '--docType'):
-              docType = value
-          elif option in ('-p', '--path'):
-              outPath = value
+        if len(opts) == 0:
+            raise _Usage(_helpMessage)
+        team=None
+        crawlerId=None
+        dataDir=None
+        url=None
+        index=None
+        docType=None
 
-       if team == None or crawlerId == None or dataDir == None or index == None or docType == None\
-               or (outPath == None and url == None):
-           raise _Usage(_helpMessage)
-       esIndex(dataDir, team, crawlerId, index, docType, url, outPath)
+        outPath=None
+        storePrefix=None
 
-   except _Usage, err:
-       print >>sys.stderr, sys.argv[0].split('/')[-1] + ': ' + str(err.msg)
-       return 2
+        for option, value in opts:
+            if option in ('-h', '--help'):
+                raise _Usage(_helpMessage)
+            elif option in ('-v', '--verbose'):
+                global _verbose
+                _verbose = True
+            elif option in ('-t', '--team'):
+                team = value
+            elif option in ('-c', '--crawlerId'):
+                crawlerId = value
+            elif option in ('-d', '--dataDir'):
+                dataDir = value
+            elif option in ('-u', '--url'):
+                url = value
+            elif option in ('-i', '--index'):
+                index = value
+            elif option in ('-o', '--docType'):
+                docType = value
+            elif option in ('-p', '--path'):
+                outPath = value
+            elif option in ('-s', '--storeprefix'):
+                storePrefix = value
+
+        if team == None or crawlerId == None or dataDir == None or index == None or docType == None \
+                or (outPath == None and url == None) or storePrefix == None:
+            print("One or more arguments are missing or invalid")
+            raise _Usage(_helpMessage)
+
+
+        esIndex(dataDir, team, crawlerId, index, docType, url, outPath, storePrefix)
+
+    except _Usage, err:
+        print >>sys.stderr, sys.argv[0].split('/')[-1] + ': ' + str(err.msg)
+        return 2
 
 if __name__ == "__main__":
-   sys.exit(main())
+    sys.exit(main())
