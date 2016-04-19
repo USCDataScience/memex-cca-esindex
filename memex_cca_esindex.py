@@ -131,19 +131,30 @@ def esIndex(ccaDir, team, crawler, index, docType, url=None, outPath=None, store
                 newDoc["timestamp"] = ccaDoc["imported"]
                 newDoc["team"] = team
                 newDoc["crawler"] = crawler
-                newDoc["raw_content"] = ccaDoc["response"]["body"]
-                newDoc["content_type"] = getContentType(ccaDoc)
-                parsed = parser.from_buffer(newDoc["raw_content"].encode("utf-8"))
+
+                contentType = getContentType(ccaDoc)
+                newDoc["content_type"] = contentType
+
+                parsed = parser.from_buffer(ccaDoc["response"]["body"].encode("utf-8"))
                 newDoc["crawl_data"] = {}
                 if "content" in parsed:
                     newDoc["crawl_data"]["content"] = parsed["content"]
                     newDoc["extracted_text"] = parsed["content"]
-
+                if 'inlinks' in ccaDoc and ccaDoc['inlinks']:
+                    newDoc["crawl_data"]["obj_parents"] = ccaDoc['inlinks']
+                    newDoc["obj_parent"] = ccaDoc['inlinks'][0]
                 # CDR version 2.0 additions
                 newDoc["_id"] = ccaDoc["key"]
                 newDoc["obj_original_url"] = ccaDoc["url"]
-                # newDoc["obj_parent"] = ??? Missing # TODO: get this field some how!
-                newDoc["obj_stored_url"] = url_to_nutch_dump_path(ccaDoc["url"], prefix=storeprefix)
+
+                if 'text' in contentType or 'ml' in contentType:
+                    # web page
+                    newDoc["raw_content"] = ccaDoc["response"]["body"]
+                else:
+                    # binary content, we link to store
+                    # ideally we should be storing it both the cases, but the CDR schema decided this way
+                    newDoc["obj_stored_url"] = url_to_nutch_dump_path(ccaDoc["url"], prefix=storeprefix)
+
                 newDoc["extracted_metadata"] = parsed["metadata"] if 'metadata' in parsed else {}
                 newDoc["version"] = CDRVersion
                 verboseLog("Indexing ["+f+"] to Elasticsearch.")
@@ -239,7 +250,6 @@ def main(argv=None):
                 or (outPath == None and url == None) or storePrefix == None:
             print("One or more arguments are missing or invalid")
             raise _Usage(_helpMessage)
-
 
         esIndex(dataDir, team, crawlerId, index, docType, url, outPath, storePrefix)
 
